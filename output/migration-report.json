@@ -1,0 +1,325 @@
+{
+  "job_name": "LARGE_ENTERPRISE_RPT",
+  "migration_date": "2026-10-07T00:15:27.564961",
+  "source_file": "/Users/senthilkumar/Downloads/LARGE_ENTERPRISE_RPT_3.0.item",
+  "summary": {
+    "total_nodes": 41,
+    "total_connections": 36,
+    "total_contexts": 3,
+    "component_types_found": [
+      "GetConnDetails",
+      "S3Put",
+      "tDie",
+      "tFileInputExcel",
+      "tFileOutputDelimited",
+      "tJava",
+      "tMap",
+      "tMysqlClose",
+      "tMysqlConnection",
+      "tMysqlInput",
+      "tPostjob",
+      "tPrejob",
+      "tRedshiftClose",
+      "tRedshiftConnection",
+      "tRedshiftInput",
+      "tRedshiftRow",
+      "tRunJob",
+      "tS3Connection",
+      "tSendMail"
+    ],
+    "component_types_covered": [
+      "GetConnDetails",
+      "S3Put",
+      "tDie",
+      "tFileInputExcel",
+      "tFileOutputDelimited",
+      "tJava",
+      "tMap",
+      "tMysqlClose",
+      "tMysqlConnection",
+      "tMysqlInput",
+      "tPostjob",
+      "tPrejob",
+      "tRedshiftClose",
+      "tRedshiftConnection",
+      "tRedshiftInput",
+      "tRedshiftRow",
+      "tRunJob",
+      "tS3Connection",
+      "tSendMail"
+    ],
+    "component_types_uncovered": [],
+    "component_coverage_pct": 100.0,
+    "expression_auto_conversion_pct": 100.0,
+    "overall_auto_conversion_pct": 100.0
+  },
+  "components": {
+    "tRedshiftRow": 10,
+    "tRedshiftInput": 2,
+    "tMap": 1,
+    "tFileOutputDelimited": 1,
+    "tFileInputExcel": 5,
+    "tMysqlInput": 1,
+    "tS3Connection": 1,
+    "S3Put": 1,
+    "tSendMail": 2,
+    "tRunJob": 2,
+    "tPrejob": 1,
+    "tJava": 1,
+    "GetConnDetails": 1,
+    "tRedshiftConnection": 3,
+    "tDie": 4,
+    "tPostjob": 1,
+    "tRedshiftClose": 2,
+    "tMysqlConnection": 1,
+    "tMysqlClose": 1
+  },
+  "expression_stats": {
+    "total": 86,
+    "auto": 86,
+    "partial": 0,
+    "manual": 0
+  },
+  "categories": {
+    "sql": 4,
+    "transformation": 4,
+    "file_io": 6,
+    "connection": 8,
+    "cloud_storage": 1,
+    "notification": 2,
+    "control": 10
+  },
+  "secrets_required": [
+    "mysql/host",
+    "mysql/password",
+    "notifications/webhook_url",
+    "redshift/host",
+    "redshift/password"
+  ],
+  "warnings": [
+    "tJava requires manual translation: System.out.println(\"path :- \" + context.context_filepath);\n",
+    "No specific translator for GetConnDetails"
+  ],
+  "generated_files": [
+    "main.py",
+    "transformations.py",
+    "sql_statements.py",
+    "connections.py",
+    "config/job.yml",
+    "tests/test_main.py",
+    "migration-report.json"
+  ],
+  "tmap_details": [
+    {
+      "node": "tMap_1",
+      "input_tables": [
+        {
+          "name": "row2",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 76
+        },
+        {
+          "name": "geo",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 3
+        },
+        {
+          "name": "row3",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 2
+        },
+        {
+          "name": "row4",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 6
+        },
+        {
+          "name": "row5",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 2
+        },
+        {
+          "name": "doc",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 2
+        },
+        {
+          "name": "account_map",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 11
+        },
+        {
+          "name": "route",
+          "matching_mode": "UNIQUE_MATCH",
+          "lookup_mode": "LOAD_ONCE",
+          "columns": 6
+        }
+      ],
+      "output_tables": [
+        {
+          "name": "tofile",
+          "columns": 86,
+          "has_filter": true,
+          "filter": "!\"row3.sold_to_party\".equals(row2.sold_to_party)",
+          "complex_expressions": [
+            {
+              "name": "country",
+              "expression": "StringHandling.LEN(geo.country_name) > 1 ? geo.country_name :  row2.country  "
+            },
+            {
+              "name": "geo",
+              "expression": "StringHandling.LEN(geo.Geo) > 1 ? geo.Geo :  row2.geo "
+            },
+            {
+              "name": "prod_cd",
+              "expression": "StringHandling.LEN(StringHandling.TRIM(CommonDb.replace(row2.prod_cd ,\"-\",\"\"))) > 7 ? TalendString.talendTrim(StringHandling.TRIM(CommonDb.replace(row2.prod_cd ,\"-\",\"\")),'0',1):StringHandling.TRIM(CommonDb.replace(row2.prod_cd ,\"-\",\"\")) "
+            },
+            {
+              "name": "prod_desc",
+              "expression": "//row2.prod_desc  \r\nrow4.prod_description "
+            },
+            {
+              "name": "prod_group",
+              "expression": "//row2.prod_group \r\nrow4.prod_group_name "
+            },
+            {
+              "name": "order_status",
+              "expression": "\"Electronic\".equals(row2.order_status)  ||  \"ELECTRONIC\".equals(row2.order_status)  ?  \"Electronic\" : \"\""
+            },
+            {
+              "name": "us_state",
+              "expression": "StringHandling.LEN(row2.us_state) > 1 ? row2.us_state : account_map.us_state "
+            }
+          ]
+        }
+      ],
+      "var_tables": 1
+    }
+  ],
+  "context_parameters": {
+    "total": 112,
+    "credentials_to_migrate": [
+      "mailpassword",
+      "FTPPassword",
+      "password",
+      "flexpcebg_password",
+      "ftp_password_omniture",
+      "luciskydata_password",
+      "luciskydev_password",
+      "luciskyrds_password",
+      "luciskystg_password",
+      "luciskystg_prod_password",
+      "s3_access_key_luci_redshift",
+      "s3_secret_key_luci_redshift",
+      "ssh_password",
+      "tsendemail_password"
+    ],
+    "config_params": [
+      "datecnt",
+      "CCList",
+      "FromList",
+      "mailusername",
+      "SMTPHost",
+      "SMTPPort",
+      "ToList",
+      "csvTemplate",
+      "csvTemplateImp",
+      "days_minus",
+      "FileCount",
+      "message",
+      "rawSAPFileName",
+      "rawSAPFilePath",
+      "rawSCAccountMapFileName",
+      "rawSCFilePath",
+      "rawSCOrderMapFileName",
+      "rawSCTrafficFileName",
+      "records",
+      "sap_days_minus",
+      "sourceSAPFilePath",
+      "sourceSAPFilePathImp",
+      "sourceSCFilePath",
+      "sourceSCFilePathImp",
+      "FTPHost",
+      "FTPPort",
+      "FTPSAPDir",
+      "FTPSCDir",
+      "FTPUsername",
+      "db",
+      "host",
+      "port",
+      "username",
+      "jobMailContent",
+      "propertiesFile",
+      "propertiesFilePath",
+      "homedir",
+      "printOperations",
+      "context_filepath",
+      "ecomm_directory",
+      "flexpcebg_database",
+      "flexpcebg_host",
+      "flexpcebg_port",
+      "flexpcebg_schema",
+      "flexpcebg_username",
+      "ftp_host_omniture",
+      "ftp_local_directory_omniture",
+      "ftp_port_omniture",
+      "ftp_remote_directory_omniture",
+      "ftp_username_omniture",
+      "logfile_path",
+      "luciskydata_additional_params",
+      "luciskydata_database",
+      "luciskydata_host",
+      "luciskydata_port",
+      "luciskydata_schema",
+      "luciskydata_username",
+      "luciskydev_additional_params",
+      "luciskydev_database",
+      "luciskydev_host",
+      "luciskydev_port",
+      "luciskydev_schema",
+      "luciskydev_username",
+      "luciskyrds_additional_params",
+      "luciskyrds_database",
+      "luciskyrds_host",
+      "luciskyrds_port",
+      "luciskyrds_schema",
+      "luciskyrds_username",
+      "luciskystg_additional_params",
+      "luciskystg_database",
+      "luciskystg_host",
+      "luciskystg_port",
+      "luciskystg_prod_additional_params",
+      "luciskystg_prod_database",
+      "luciskystg_prod_host",
+      "luciskystg_prod_port",
+      "luciskystg_prod_schema",
+      "luciskystg_prod_username",
+      "luciskystg_schema",
+      "luciskystg_username",
+      "s3_bucket_luci_redshift",
+      "ssh_host",
+      "ssh_port",
+      "ssh_user",
+      "tsendemail_bcc",
+      "tsendemail_cc",
+      "tsendemail_from",
+      "tsendemail_message",
+      "tsendemail_sendername",
+      "tsendemail_smtphost",
+      "tsendemail_smtpport",
+      "tsendemail_subject",
+      "tsendemail_to",
+      "tsendemail_username",
+      "luciskyrds_Login",
+      "luciskyrds_Server",
+      "luciskyrds_AdditionalParams"
+    ]
+  }
+}

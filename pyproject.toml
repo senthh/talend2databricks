@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "talend2databricks"
+version = "0.1.0"
+description = "Convert Talend .item XML files into Databricks PySpark/Spark SQL jobs"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+talend2db = "talend2databricks.cli:cli"
+talend2databricks = "talend2databricks.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
