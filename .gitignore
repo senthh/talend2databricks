@@ -12,3 +12,6 @@ venv/
 .mypy_cache/
 *.bmp
 .DS_Store
+
+generated/
+output/
