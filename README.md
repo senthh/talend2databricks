@@ -21,10 +21,12 @@ A reusable CLI tool that converts Talend `.item` job files into Databricks PySpa
 ## Install
 
 ```bash
+git clone https://github.com/senthh/talend2databricks.git
+cd talend2databricks
 pip install -e .
 ```
 
-## Usage
+## Quick Start
 
 ```bash
 # Analyze migration readiness
@@ -36,6 +38,8 @@ talend2db convert path/to/job.item --output-dir ./output
 # Generate + Databricks Jobs API JSON
 talend2db deploy path/to/job.item --workspace https://xxx.databricks.com --job-name MY_JOB
 ```
+
+📖 **Full usage guide, validation workflow, and Databricks deployment instructions:** [docs/USAGE.md](docs/USAGE.md)
 
 ## Supported Talend Components
 
