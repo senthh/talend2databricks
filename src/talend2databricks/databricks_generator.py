@@ -331,6 +331,31 @@ class DatabricksGenerator:
             '"""Connection and configuration management for Databricks."""',
             "",
             "",
+            "def _get_dbutils(spark):",
+            '    """Get dbutils - works in notebooks, spark-submit, and local testing."""',
+            "    try:",
+            "        # Available as a global in Databricks notebooks",
+            "        return dbutils  # noqa: F821",
+            "    except NameError:",
+            "        pass",
+            "    try:",
+            "        # Spark-submit on Databricks: resolve from the JVM gateway",
+            "        from pyspark.dbutils import DBUtils",
+            "        return DBUtils(spark)",
+            "    except (ImportError, Exception):",
+            "        pass",
+            "    # Local / non-Databricks: return a stub that raises clear errors",
+            "    class _Stub:",
+            "        class secrets:",
+            "            @staticmethod",
+            "            def get(scope, key):",
+            '                raise RuntimeError(',
+            '                    f"dbutils.secrets.get({scope!r}, {key!r}) called outside Databricks. "',
+            '                    f"Set the value via environment variable TALEND_{key.upper()} or pass it in config."',
+            "                )",
+            "    return _Stub()",
+            "",
+            "",
             "def get_config(spark=None) -> dict:",
             '    """Load job configuration with secret scope references.',
             "",
@@ -339,13 +364,16 @@ class DatabricksGenerator:
             '    """',
             "    config = {}",
             "",
+            "    # Resolve dbutils (works in notebooks, spark-submit, and locally)",
+            "    _dbutils = _get_dbutils(spark)",
+            "",
             "    # ── Secret scope credentials ──",
             "    # Replace hardcoded credentials with Databricks secrets",
         ]
 
         for key in credential_keys:
             lines.append(
-                f'    config["{key}"] = dbutils.secrets.get(scope="talend-migration", key="{key}")'
+                f'    config["{key}"] = _dbutils.secrets.get(scope="talend-migration", key="{key}")'
             )
 
         lines.append("")
