@@ -284,20 +284,20 @@ def deploy(item_file: str, workspace: str, job_name: str, output_dir: str | None
     click.echo(f"  databricks workspace import-dir {output_dir} /jobs/{job_name}")
 
 
+
 @cli.command()
 @click.argument("item_dir", type=click.Path(exists=True))
 @click.option("--secret-scope", "-s", default="talend-migration", help="Databricks secret scope name")
 @click.option("--output", "-o", default=None, help="Write setup script to file")
 def secrets(item_dir: str, secret_scope: str, output: str | None):
-    """Scan all .item files and produce a deduplicated secret-key setup script.
+    """Scan .item files, extract actual credentials, produce a Databricks setup script.
 
     ITEM_DIR can be a single .item file or a directory containing .item files.
-    Scans every file, collects all credential parameters, deduplicates them,
-    and outputs a Databricks notebook script to create the secret scope.
+    Extracts actual credential values from the .item XML context parameters,
+    deduplicates across jobs, and outputs a ready-to-run Databricks notebook.
     """
     import glob
 
-    # Collect .item files
     if os.path.isfile(item_dir):
         item_files = [item_dir]
     else:
@@ -306,13 +306,13 @@ def secrets(item_dir: str, secret_scope: str, output: str | None):
             item_files = sorted(glob.glob(os.path.join(item_dir, "*.item")))
 
     if not item_files:
-        click.echo(f"❌ No .item files found in {item_dir}")
+        click.echo(f"No .item files found in {item_dir}")
         return
 
-    click.echo(f"🔍 Scanning {len(item_files)} .item file(s)...\n")
+    click.echo(f"Scanning {len(item_files)} .item file(s)...\n")
 
-    # Deduplicated: key → set of jobs that use it
-    all_secrets: dict[str, set[str]] = {}
+    # key -> { "value": str, "jobs": set, "is_encrypted": bool }
+    all_secrets: dict[str, dict] = {}
     errors = []
 
     for fpath in item_files:
@@ -324,74 +324,107 @@ def secrets(item_dir: str, secret_scope: str, output: str | None):
             for p in ctx.parameters:
                 pname = p.name.lower()
                 if any(k in pname for k in ('password', 'secret', 'key', 'pass', 'credential')):
+                    val = p.value.strip()
+                    is_encrypted = val.startswith("enc:")
+
                     if p.name not in all_secrets:
-                        all_secrets[p.name] = set()
-                    all_secrets[p.name].add(job.name)
+                        all_secrets[p.name] = {
+                            "value": "" if is_encrypted else val,
+                            "jobs": set(),
+                            "is_encrypted": is_encrypted,
+                        }
+                    else:
+                        existing = all_secrets[p.name]
+                        # If we had no value but this job provides one, take it
+                        if not existing["value"] and val and not is_encrypted:
+                            existing["value"] = val
+                        if is_encrypted:
+                            existing["is_encrypted"] = True
+
+                    all_secrets[p.name]["jobs"].add(job.name)
         except Exception as e:
             errors.append((fpath, str(e)))
 
     if errors:
-        click.echo(f"⚠️  {len(errors)} file(s) failed to parse:")
+        click.echo(f"  {len(errors)} file(s) failed to parse:")
         for fpath, err in errors[:5]:
-            click.echo(f"  • {os.path.basename(fpath)}: {err}")
-        if len(errors) > 5:
-            click.echo(f"  ... and {len(errors) - 5} more")
+            click.echo(f"  - {os.path.basename(fpath)}: {err}")
         click.echo()
 
-    click.echo(f"🔐 Secret scope: {secret_scope}")
+    populated = sum(1 for s in all_secrets.values() if s["value"])
+    encrypted = sum(1 for s in all_secrets.values() if s["is_encrypted"] and not s["value"])
+    empty_count = sum(1 for s in all_secrets.values() if not s["value"] and not s["is_encrypted"])
+
+    click.echo(f"Secret scope: {secret_scope}")
     click.echo(f"   Unique keys:  {len(all_secrets)}")
     click.echo(f"   From jobs:    {len(item_files) - len(errors)}")
+    click.echo(f"   Pre-filled:   {populated} (actual values from .item files)")
+    if encrypted:
+        click.echo(f"   Encrypted:    {encrypted} (Talend-encrypted, need manual entry)")
+    if empty_count:
+        click.echo(f"   Empty:        {empty_count} (no value in .item)")
     click.echo()
 
-    # Print the key table
-    click.echo(f"{'Key':<45} {'Used by # jobs':>15}")
-    click.echo("─" * 62)
+    click.echo(f"  {'Key':<40} {'Status':<14} {'Used by':>8}")
+    click.echo("  " + "-" * 64)
     for key in sorted(all_secrets.keys()):
-        jobs = all_secrets[key]
-        click.echo(f"  {key:<43} {len(jobs):>13}")
+        info = all_secrets[key]
+        if info["value"]:
+            status = "extracted"
+        elif info["is_encrypted"]:
+            status = "encrypted"
+        else:
+            status = "empty"
+        click.echo(f"  {key:<40} {status:<14} {len(info['jobs']):>5} job(s)")
 
-    # Generate setup script
-    script_lines = [
-        "# Databricks notebook — run once to set up all secrets",
-        f"# Scope: {secret_scope}",
-        f"# Keys:  {len(all_secrets)} (deduplicated from {len(item_files)} .item files)",
-        "",
-        "# Step 1: Create scope (idempotent)",
-        "try:",
-        f'    dbutils.secrets.createScope("{secret_scope}")',
-        f'    print("Created scope: {secret_scope}")',
-        "except Exception as e:",
-        f'    print(f"Scope may already exist: {{e}}")',
-        "",
-        "# Step 2: Populate secrets — replace REPLACE_ME with actual values",
-        "secrets = {",
-    ]
+    # Build the notebook script with actual credential values
+    sl = []
+    sl.append("# Databricks notebook - run ONCE to set up secrets")
+    sl.append(f"# Scope: {secret_scope}")
+    sl.append(f"# Keys:  {len(all_secrets)} deduplicated from {len(item_files)} .item files")
+    sl.append(f"# Pre-filled: {populated}, manual: {encrypted + empty_count}")
+    sl.append("# DELETE THIS NOTEBOOK after running.")
+    sl.append("")
+    sl.append("try:")
+    sl.append(f'    dbutils.secrets.createScope("{secret_scope}")')
+    sl.append(f'    print("Created scope: {secret_scope}")')
+    sl.append("except Exception as e:")
+    sl.append('    print(f"Scope exists: {e}")')
+    sl.append("")
+    sl.append("secrets = {")
     for key in sorted(all_secrets.keys()):
-        jobs_str = ", ".join(sorted(all_secrets[key]))
-        script_lines.append(f'    "{key}": "REPLACE_ME",  # used by: {jobs_str}')
-    script_lines.extend([
-        "}",
-        "",
-        "for key, value in secrets.items():",
-        '    if value == "REPLACE_ME":',
-        '        print(f"  ⏭  {key} — skipped (still REPLACE_ME)")',
-        "        continue",
-        f'    dbutils.secrets.put(scope="{secret_scope}", key=key, string_value=value)',
-        '    print(f"  ✓ {key}")',
-        "",
-        f'print(f"\\nDone — check with: dbutils.secrets.list(\'{secret_scope}\')")',
-    ])
+        info = all_secrets[key]
+        jobs_str = ", ".join(sorted(info["jobs"]))
+        val = info["value"]
+        # Escape for safe embedding in Python string literal
+        val_safe = val.replace("\\", "\\\\").replace('"', '\\"')
+        if not val:
+            reason = "Talend-encrypted" if info["is_encrypted"] else "empty in .item"
+            sl.append(f'    "{key}": "",  # {reason}. Used by: {jobs_str}')
+        else:
+            sl.append(f'    "{key}": "{val_safe}",  # used by: {jobs_str}')
+    sl.append("}")
+    sl.append("")
+    sl.append("for key, value in secrets.items():")
+    sl.append("    if not value:")
+    sl.append('        print(f"  skip: {key} (empty)")')
+    sl.append("        continue")
+    sl.append(f'    dbutils.secrets.put(scope="{secret_scope}", key=key, string_value=value)')
+    sl.append('    print(f"  done: {key}")')
+    sl.append("")
+    sl.append('print("\\nDELETE THIS NOTEBOOK after running.")')
 
-    script_text = "\n".join(script_lines)
+    script_text = "\n".join(sl)
 
     if output:
         with open(output, "w") as f:
             f.write(script_text)
-        click.echo(f"\n📄 Setup script written to: {output}")
+        click.echo(f"\nSetup script written to: {output}")
+        click.echo("   Contains plaintext credentials - do not commit to git!")
     else:
-        click.echo(f"\n{'═' * 62}")
+        click.echo(f"\n{'=' * 66}")
         click.echo("  DATABRICKS SETUP SCRIPT (copy into a notebook)")
-        click.echo(f"{'═' * 62}\n")
+        click.echo(f"{'=' * 66}\n")
         click.echo(script_text)
 
 
