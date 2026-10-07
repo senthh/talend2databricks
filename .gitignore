@@ -15,3 +15,4 @@ venv/
 
 generated/
 output/
+setup_secrets.py
