@@ -23,6 +23,7 @@ import yaml
 from .component_registry import CodeFragment, ComponentRegistry
 from .expression_translator import ExpressionTranslator
 from .ir import TalendJob, TalendNode
+from .sql_dialect import translate_all_statements
 
 
 class DatabricksGenerator:
@@ -287,6 +288,9 @@ class DatabricksGenerator:
         all_stmts = []
         for frag in sql_frags:
             all_stmts.extend(frag.sql_statements)
+
+        # Translate Redshift SQL dialect → Spark SQL
+        all_stmts = translate_all_statements(all_stmts)
 
         for stmt in all_stmts:
             escaped = stmt.replace('\\', '\\\\').replace('"""', '\\"\\"\\"')
