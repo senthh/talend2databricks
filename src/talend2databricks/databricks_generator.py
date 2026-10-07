@@ -369,12 +369,19 @@ class DatabricksGenerator:
             "    _dbutils = _get_dbutils(spark)",
             "",
             "    # ── Secret scope credentials ──",
-            "    # Replace hardcoded credentials with Databricks secrets",
+            "    # Reads from Databricks secret scope; falls back to empty string if not set",
+            f'    _scope = "{self.secret_scope}"',
+            "    def _get_secret(key):",
+            "        try:",
+            "            return _dbutils.secrets.get(scope=_scope, key=key)",
+            "        except Exception:",
+            '            print(f"  Warning: secret {_scope}/{key} not found, using empty string")',
+            '            return ""',
         ]
 
         for key in credential_keys:
             lines.append(
-                f'    config["{key}"] = _dbutils.secrets.get(scope="{self.secret_scope}", key="{key}")'
+                f'    config["{key}"] = _get_secret("{key}")'
             )
 
         lines.append("")
