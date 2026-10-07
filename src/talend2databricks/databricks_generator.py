@@ -28,9 +28,10 @@ from .ir import TalendJob, TalendNode
 class DatabricksGenerator:
     """Generate a Databricks project from a TalendJob IR."""
 
-    def __init__(self, job: TalendJob, output_dir: str):
+    def __init__(self, job: TalendJob, output_dir: str, secret_scope: str = "talend-migration"):
         self.job = job
         self.output_dir = output_dir
+        self.secret_scope = secret_scope
         self.registry = ComponentRegistry()
         self.expr_translator = ExpressionTranslator()
         self.fragments: list[CodeFragment] = []
@@ -373,7 +374,7 @@ class DatabricksGenerator:
 
         for key in credential_keys:
             lines.append(
-                f'    config["{key}"] = _dbutils.secrets.get(scope="talend-migration", key="{key}")'
+                f'    config["{key}"] = _dbutils.secrets.get(scope="{self.secret_scope}", key="{key}")'
             )
 
         lines.append("")
@@ -418,7 +419,7 @@ class DatabricksGenerator:
                 "default_context": self.job.default_context,
             },
             "databricks": {
-                "secret_scope": "talend-migration",
+                "secret_scope": self.secret_scope,
                 "catalog": "main",
                 "schema": "default",
             },

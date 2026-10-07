@@ -189,7 +189,8 @@ def analyze(item_file: str, json_output: bool):
 @cli.command()
 @click.argument("item_file", type=click.Path(exists=True))
 @click.option("--output-dir", "-o", default=None, help="Output directory for generated project")
-def convert(item_file: str, output_dir: str | None):
+@click.option("--secret-scope", "-s", default="talend-migration", help="Databricks secret scope name (default: talend-migration)")
+def convert(item_file: str, output_dir: str | None, secret_scope: str):
     """Convert a Talend .item file to a Databricks project.
 
     Generates main.py, transformations.py, sql_statements.py, connections.py,
@@ -201,11 +202,12 @@ def convert(item_file: str, output_dir: str | None):
 
     click.echo(f"🔄 Converting: {item_file}")
     click.echo(f"📁 Output:     {output_dir}")
+    click.echo(f"🔐 Scope:      {secret_scope}")
     click.echo()
 
     job = parse_item_file(item_file)
 
-    generator = DatabricksGenerator(job, output_dir)
+    generator = DatabricksGenerator(job, output_dir, secret_scope=secret_scope)
     report = generator.generate()
     report["source_file"] = os.path.abspath(item_file)
 
@@ -238,7 +240,8 @@ def convert(item_file: str, output_dir: str | None):
 @click.option("--workspace", "-w", required=True, help="Databricks workspace URL")
 @click.option("--job-name", "-n", required=True, help="Databricks job name")
 @click.option("--output-dir", "-o", default=None, help="Output directory")
-def deploy(item_file: str, workspace: str, job_name: str, output_dir: str | None):
+@click.option("--secret-scope", "-s", default="talend-migration", help="Databricks secret scope name")
+def deploy(item_file: str, workspace: str, job_name: str, output_dir: str | None, secret_scope: str):
     """Generate Databricks project + Jobs API deployment JSON.
 
     Does NOT actually call the Databricks API — produces the JSON payload
@@ -250,13 +253,14 @@ def deploy(item_file: str, workspace: str, job_name: str, output_dir: str | None
     click.echo(f"🚀 Generating deployment for: {item_file}")
     click.echo(f"   Workspace: {workspace}")
     click.echo(f"   Job name:  {job_name}")
+    click.echo(f"   Scope:     {secret_scope}")
     click.echo(f"   Output:    {output_dir}")
     click.echo()
 
     job = parse_item_file(item_file)
 
     # Generate project
-    generator = DatabricksGenerator(job, output_dir)
+    generator = DatabricksGenerator(job, output_dir, secret_scope=secret_scope)
     report = generator.generate()
 
     # Generate deploy JSON
@@ -278,6 +282,117 @@ def deploy(item_file: str, workspace: str, job_name: str, output_dir: str | None
     click.echo("To deploy:")
     click.echo(f"  databricks jobs create --json @{deploy_path}")
     click.echo(f"  databricks workspace import-dir {output_dir} /jobs/{job_name}")
+
+
+@cli.command()
+@click.argument("item_dir", type=click.Path(exists=True))
+@click.option("--secret-scope", "-s", default="talend-migration", help="Databricks secret scope name")
+@click.option("--output", "-o", default=None, help="Write setup script to file")
+def secrets(item_dir: str, secret_scope: str, output: str | None):
+    """Scan all .item files and produce a deduplicated secret-key setup script.
+
+    ITEM_DIR can be a single .item file or a directory containing .item files.
+    Scans every file, collects all credential parameters, deduplicates them,
+    and outputs a Databricks notebook script to create the secret scope.
+    """
+    import glob
+
+    # Collect .item files
+    if os.path.isfile(item_dir):
+        item_files = [item_dir]
+    else:
+        item_files = sorted(glob.glob(os.path.join(item_dir, "**/*.item"), recursive=True))
+        if not item_files:
+            item_files = sorted(glob.glob(os.path.join(item_dir, "*.item")))
+
+    if not item_files:
+        click.echo(f"❌ No .item files found in {item_dir}")
+        return
+
+    click.echo(f"🔍 Scanning {len(item_files)} .item file(s)...\n")
+
+    # Deduplicated: key → set of jobs that use it
+    all_secrets: dict[str, set[str]] = {}
+    errors = []
+
+    for fpath in item_files:
+        try:
+            job = parse_item_file(fpath)
+            ctx = job.default_context_obj
+            if not ctx:
+                continue
+            for p in ctx.parameters:
+                pname = p.name.lower()
+                if any(k in pname for k in ('password', 'secret', 'key', 'pass', 'credential')):
+                    if p.name not in all_secrets:
+                        all_secrets[p.name] = set()
+                    all_secrets[p.name].add(job.name)
+        except Exception as e:
+            errors.append((fpath, str(e)))
+
+    if errors:
+        click.echo(f"⚠️  {len(errors)} file(s) failed to parse:")
+        for fpath, err in errors[:5]:
+            click.echo(f"  • {os.path.basename(fpath)}: {err}")
+        if len(errors) > 5:
+            click.echo(f"  ... and {len(errors) - 5} more")
+        click.echo()
+
+    click.echo(f"🔐 Secret scope: {secret_scope}")
+    click.echo(f"   Unique keys:  {len(all_secrets)}")
+    click.echo(f"   From jobs:    {len(item_files) - len(errors)}")
+    click.echo()
+
+    # Print the key table
+    click.echo(f"{'Key':<45} {'Used by # jobs':>15}")
+    click.echo("─" * 62)
+    for key in sorted(all_secrets.keys()):
+        jobs = all_secrets[key]
+        click.echo(f"  {key:<43} {len(jobs):>13}")
+
+    # Generate setup script
+    script_lines = [
+        "# Databricks notebook — run once to set up all secrets",
+        f"# Scope: {secret_scope}",
+        f"# Keys:  {len(all_secrets)} (deduplicated from {len(item_files)} .item files)",
+        "",
+        "# Step 1: Create scope (idempotent)",
+        "try:",
+        f'    dbutils.secrets.createScope("{secret_scope}")',
+        f'    print("Created scope: {secret_scope}")',
+        "except Exception as e:",
+        f'    print(f"Scope may already exist: {{e}}")',
+        "",
+        "# Step 2: Populate secrets — replace REPLACE_ME with actual values",
+        "secrets = {",
+    ]
+    for key in sorted(all_secrets.keys()):
+        jobs_str = ", ".join(sorted(all_secrets[key]))
+        script_lines.append(f'    "{key}": "REPLACE_ME",  # used by: {jobs_str}')
+    script_lines.extend([
+        "}",
+        "",
+        "for key, value in secrets.items():",
+        '    if value == "REPLACE_ME":',
+        '        print(f"  ⏭  {key} — skipped (still REPLACE_ME)")',
+        "        continue",
+        f'    dbutils.secrets.put(scope="{secret_scope}", key=key, string_value=value)',
+        '    print(f"  ✓ {key}")',
+        "",
+        f'print(f"\\nDone — check with: dbutils.secrets.list(\'{secret_scope}\')")',
+    ])
+
+    script_text = "\n".join(script_lines)
+
+    if output:
+        with open(output, "w") as f:
+            f.write(script_text)
+        click.echo(f"\n📄 Setup script written to: {output}")
+    else:
+        click.echo(f"\n{'═' * 62}")
+        click.echo("  DATABRICKS SETUP SCRIPT (copy into a notebook)")
+        click.echo(f"{'═' * 62}\n")
+        click.echo(script_text)
 
 
 if __name__ == "__main__":
